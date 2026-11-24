@@ -1,0 +1,398 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#100b1d">
+<title>DESOSIRRI IPTV</title>
+<style>
+:root {
+  --bg:#100b1d;
+  --panel:#1b1429;
+  --purple:#8655ff;
+  --text:#fff;
+  --muted:#aaa1ba;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:Arial,sans-serif
+}
+header{
+  padding:22px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  background:#171023;
+  border-bottom:1px solid #30213f
+}
+.logo{
+  font-size:24px;
+  font-weight:900;
+  letter-spacing:2px
+}
+.logo span{color:#a889ff}
+main{max-width:1150px;margin:auto;padding:20px}
+button,.upload{
+  background:var(--purple);
+  color:white;
+  border:0;
+  padding:12px 17px;
+  border-radius:9px;
+  cursor:pointer;
+  font-weight:bold
+}
+button.secondary{background:#302440}
+input{
+  background:#21182f;
+  color:white;
+  border:1px solid #49365f;
+  padding:13px;
+  border-radius:9px;
+  width:100%;
+  outline:none
+}
+.player{
+  background:#08060d;
+  border-radius:15px;
+  overflow:hidden;
+  margin:18px 0
+}
+video{
+  width:100%;
+  aspect-ratio:16/9;
+  display:block
+}
+.controls{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap
+}
+.controls>*{flex:1}
+.tabs{
+  display:flex;
+  gap:9px;
+  flex-wrap:wrap;
+  margin:20px 0
+}
+.tabs button{background:#291d39}
+.tabs button.active{background:var(--purple)}
+.layout{
+  display:grid;
+  grid-template-columns:240px 1fr;
+  gap:18px
+}
+aside,.channels{
+  background:var(--panel);
+  border-radius:13px;
+  padding:15px
+}
+.channel{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  padding:12px;
+  border-bottom:1px solid #302440;
+  cursor:pointer
+}
+.channel:hover{background:#302440}
+.channel .name{
+  flex:1;
+  min-width:0;
+  overflow-wrap:anywhere
+}
+.channel small{color:var(--muted)}
+.star{color:#f6c85f;font-size:20px}
+.empty{
+  color:var(--muted);
+  padding:25px;
+  text-align:center
+}
+@media(max-width:650px){
+  .layout{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">DESO<span>SIRRI</span></div>
+  <small>PREMIUM IPTV PLAYER</small>
+</header>
+
+<main>
+<h2>Bienvenido a DESOSIRRI</h2>
+<p style="color:#aaa1ba">
+Tu entretenimiento, a tu manera.
+</p>
+
+<section class="controls">
+<label class="upload">
+Cargar lista M3U
+<input id="file" type="file"
+accept=".m3u,.m3u8,text/plain" hidden>
+</label>
+
+<input id="playlistUrl"
+placeholder="Pega aquí tu URL M3U">
+
+<button onclick="loadUrl()">Cargar URL</button>
+</section>
+
+<div id="status">
+Carga una lista IPTV autorizada para comenzar.
+</div>
+
+<section class="player">
+<video id="video" controls playsinline></video>
+</section>
+
+<div id="nowPlaying">
+Selecciona un canal para reproducirlo.
+</div>
+
+<nav class="tabs">
+<button class="active"
+onclick="setTab('Todos',this)">Todos</button>
+<button onclick="setTab('Live',this)">Live TV</button>
+<button onclick="setTab('Movies',this)">Películas</button>
+<button onclick="setTab('Series',this)">Series</button>
+<button onclick="setTab('Favorites',this)">Favoritos ★</button>
+</nav>
+
+<div class="layout">
+<aside>
+<h3>Categorías</h3>
+<div id="categories">Todas las categorías</div>
+</aside>
+
+<section class="channels">
+<input id="search"
+placeholder="Buscar canales..."
+oninput="render()">
+
+<div id="channelList">
+<div class="empty">
+Todavía no hay canales. Carga tu lista M3U.
+</div>
+</div>
+</section>
+</div>
+</main>
+
+<script>
+let channels=[];
+let tab="Todos";
+let category="Todas";
+let favorites=JSON.parse(
+localStorage.getItem("deso-favorites")||"[]"
+);
+
+const video=document.getElementById("video");
+
+function parseM3U(text){
+const lines=text.replace(/^\uFEFF/,"").split(/\r?\n/);
+const result=[];
+let info=null;
+
+for(const raw of lines){
+const line=raw.trim();
+
+if(line.startsWith("#EXTINF:")){
+const name=line.split(",").slice(1).join(",").trim();
+const group=line.match(/group-title="([^"]*)"/i);
+const logo=line.match(/tvg-logo="([^"]*)"/i);
+
+info={
+name:name||"Canal sin nombre",
+group:group?group[1]:"Otros",
+logo:logo?logo[1]:""
+};
+
+}else if(line&&!line.startsWith("#")&&info){
+
+if(/^https?:\/\//i.test(line)){
+result.push({...info,url:line});
+}
+info=null;
+}
+}
+return result;
+}
+
+function acceptPlaylist(text){
+if(!text.trim().startsWith("#EXTM3U")){
+document.getElementById("status").textContent=
+"La lista no parece ser una lista M3U válida.";
+return;
+}
+
+channels=parseM3U(text);
+category="Todas";
+
+document.getElementById("status").textContent=
+channels.length+" canales cargados correctamente.";
+
+renderCategories();
+render();
+}
+
+document.getElementById("file").addEventListener(
+"change",async e=>{
+const file=e.target.files[0];
+if(!file)return;
+acceptPlaylist(await file.text());
+});
+
+async function loadUrl(){
+const url=document.getElementById("playlistUrl").value.trim();
+
+if(!/^https?:\/\//i.test(url)){
+alert("Introduce una dirección HTTP o HTTPS válida.");
+return;
+}
+
+try{
+document.getElementById("status").textContent="Cargando lista...";
+const response=await fetch(url);
+if(!response.ok)throw new Error("Error HTTP");
+acceptPlaylist(await response.text());
+
+}catch(e){
+document.getElementById("status").textContent=
+"No se pudo cargar la URL. Puede que el servidor no permita conexiones desde el navegador. Prueba cargar el archivo M3U.";
+}
+}
+
+function setTab(value,button){
+tab=value;
+
+document.querySelectorAll(".tabs button")
+.forEach(b=>b.classList.remove("active"));
+
+button.classList.add("active");
+render();
+}
+
+function renderCategories(){
+const groups=[
+"Todas",
+...new Set(channels.map(c=>c.group))
+];
+
+const box=document.getElementById("categories");
+box.replaceChildren();
+
+groups.forEach(group=>{
+const b=document.createElement("button");
+b.className="secondary";
+
+b.style.cssText=
+"display:block;width:100%;margin:5px 0;text-align:left";
+
+b.textContent=group;
+b.onclick=()=>{
+category=group;
+render();
+};
+
+box.appendChild(b);
+});
+}
+
+function kind(c){
+const g=c.group.toLowerCase();
+
+if(/movie|pel[ií]cula|vod/.test(g))return "Movies";
+if(/series|serie|episodio/.test(g))return "Series";
+
+return "Live";
+}
+
+function render(){
+const list=document.getElementById("channelList");
+list.replaceChildren();
+
+const query=document.getElementById("search")
+.value.toLowerCase();
+
+const filtered=channels.filter(c=>{
+const matchesTab=
+tab==="Todos"||
+(tab==="Favorites"
+?favorites.includes(c.url)
+:kind(c)===tab);
+
+return matchesTab&&
+(category==="Todas"||c.group===category)&&
+c.name.toLowerCase().includes(query);
+});
+
+if(!filtered.length){
+list.innerHTML=
+'<div class="empty">No hay canales para mostrar.</div>';
+return;
+}
+
+filtered.forEach(c=>{
+const row=document.createElement("div");
+row.className="channel";
+
+const icon=document.createElement("div");
+icon.textContent="▶";
+icon.style.color="#a889ff";
+
+const name=document.createElement("div");
+name.className="name";
+name.textContent=c.name;
+
+const sub=document.createElement("small");
+sub.textContent=c.group;
+
+name.append(document.createElement("br"),sub);
+
+const star=document.createElement("button");
+star.className="secondary star";
+star.textContent=
+favorites.includes(c.url)?"★":"☆";
+
+star.onclick=e=>{
+e.stopPropagation();
+
+favorites=favorites.includes(c.url)
+?favorites.filter(x=>x!==c.url)
+:[...favorites,c.url];
+
+localStorage.setItem(
+"deso-favorites",
+JSON.stringify(favorites)
+);
+
+render();
+};
+
+row.append(icon,name,star);
+row.onclick=()=>play(c);
+
+list.appendChild(row);
+});
+}
+
+function play(channel){
+video.src=channel.url;
+
+video.play().catch(()=>{
+document.getElementById("status").textContent=
+"No se pudo iniciar el video. Comprueba el formato y la disponibilidad del enlace.";
+});
+
+document.getElementById("nowPlaying").textContent=
+"Reproduciendo: "+channel.name;
+}
+</script>
+
+</body>
+</html>
