@@ -1,9 +1,11 @@
+
 name: Build THE DESOSIRRI APK
 
 on:
   workflow_dispatch:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -22,21 +24,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-           - name: Set up Android
+      - name: Set up Android
         uses: android-actions/setup-android@v3
         with:
           accept-android-sdk-licenses: true
-          packages: |
-            platform-tools
-            platforms;android-35
-            build-tools;35.0.0
+
+      - name: Install Android packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      - name: Copy web app into Android assets
+      - name: Copy web app
         run: |
           mkdir -p app/src/main/assets
           cp index.html app/src/main/assets/index.html
