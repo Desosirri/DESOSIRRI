@@ -113,6 +113,8 @@ aside,.channels{
 }
 @media(max-width:650px){
   .layout{grid-template-columns:1fr}
+  .login-grid{grid-template-columns:1fr}
+  header{gap:10px;flex-wrap:wrap}
 }
 </style>
 </head>
@@ -129,6 +131,26 @@ aside,.channels{
 Tu entretenimiento, a tu manera.
 </p>
 
+<section class="login-panel">
+  <h3>Iniciar sesión con Xtream Codes</h3>
+  <div class="login-grid">
+    <div><label for="serverUrl">URL del servidor</label>
+      <input id="serverUrl" type="url" placeholder="http://servidor:8080" autocomplete="url"></div>
+    <div><label for="xtreamUser">Usuario</label>
+      <input id="xtreamUser" type="text" placeholder="Tu usuario" autocomplete="username"></div>
+    <div><label for="xtreamPass">Contraseña</label>
+      <input id="xtreamPass" type="password" placeholder="Tu contraseña" autocomplete="current-password"></div>
+  </div>
+  <div class="login-actions">
+    <button id="connectBtn" onclick="connectXtream()">Conectar</button>
+    <button class="secondary" onclick="clearLogin()">Limpiar</button>
+  </div>
+  <small style="display:block;color:var(--muted);margin-top:10px">
+    Tus credenciales no se guardan en este dispositivo. Se usan durante esta sesión.
+  </small>
+</section>
+
+<h3>O cargar una lista M3U</h3>
 <section class="controls">
 <label class="upload">
 Cargar lista M3U
@@ -176,7 +198,7 @@ oninput="render()">
 
 <div id="channelList">
 <div class="empty">
-Todavía no hay canales. Carga tu lista M3U.
+Todavía no hay canales. Inicia sesión o carga tu lista M3U.
 </div>
 </div>
 </section>
@@ -185,6 +207,7 @@ Todavía no hay canales. Carga tu lista M3U.
 
 <script>
 let channels=[];
+let xtreamSession=null;
 let tab="Todos";
 let category="Todas";
 let favorites=JSON.parse(
@@ -192,6 +215,86 @@ localStorage.getItem("deso-favorites")||"[]"
 );
 
 const video=document.getElementById("video");
+
+
+function setStatus(message){
+  document.getElementById("status").textContent=message;
+}
+
+function clearLogin(){
+  document.getElementById("serverUrl").value="";
+  document.getElementById("xtreamUser").value="";
+  document.getElementById("xtreamPass").value="";
+  xtreamSession=null;
+  setStatus("Datos de acceso limpiados.");
+}
+
+function normalizeServer(value){
+  const trimmed=value.trim().replace(/\/+$/,"");
+  if(!/^https?:\/\//i.test(trimmed)) throw new Error("Escribe la URL completa, comenzando con http:// o https://");
+  return trimmed;
+}
+
+async function xtreamRequest(action, extra={}){
+  const {server,user,pass}=xtreamSession;
+  const params=new URLSearchParams({username:user,password:pass,...extra});
+  if(action) params.set("action",action);
+  const response=await fetch(server+"/player_api.php?"+params.toString(),{
+    method:"GET",
+    headers:{"Accept":"application/json"}
+  });
+  if(!response.ok) throw new Error("El servidor respondió con HTTP "+response.status);
+  return await response.json();
+}
+
+async function connectXtream(){
+  const serverInput=document.getElementById("serverUrl").value;
+  const user=document.getElementById("xtreamUser").value.trim();
+  const pass=document.getElementById("xtreamPass").value;
+  const button=document.getElementById("connectBtn");
+
+  if(!serverInput.trim()||!user||!pass){
+    setStatus("Completa la URL del servidor, el usuario y la contraseña.");
+    return;
+  }
+
+  try{
+    const server=normalizeServer(serverInput);
+    xtreamSession={server,user,pass};
+    button.disabled=true;
+    button.textContent="Conectando...";
+    setStatus("Comprobando los datos de acceso...");
+
+    const account=await xtreamRequest("");
+    if(!account||!account.user_info||account.user_info.auth!==1){
+      throw new Error("El proveedor no aceptó los datos de acceso. Revísalos.");
+    }
+
+    setStatus("Acceso correcto. Cargando canales...");
+    const live=await xtreamRequest("get_live_streams");
+    if(!Array.isArray(live)) throw new Error("El servidor no devolvió una lista de canales.");
+
+    channels=live.map(item=>({
+      name:item.name||"Canal sin nombre",
+      group:item.category_name||"Live TV",
+      logo:item.stream_icon||"",
+      url:server+"/live/"+encodeURIComponent(user)+"/"+encodeURIComponent(pass)+"/"+item.stream_id+".ts",
+      type:"Live"
+    }));
+    tab="Todos";
+    category="Todas";
+    renderCategories();
+    render();
+    setStatus(channels.length+" canales en vivo cargados. La disponibilidad de reproducción depende del proveedor y del navegador.");
+  }catch(error){
+    xtreamSession=null;
+    setStatus("No se pudo conectar: "+(error.message||"error desconocido")+
+      ". Si los datos son correctos, el servidor podría bloquear conexiones desde páginas web (CORS).");
+  }finally{
+    button.disabled=false;
+    button.textContent="Conectar";
+  }
+}
 
 function parseM3U(text){
 const lines=text.replace(/^\uFEFF/,"").split(/\r?\n/);
